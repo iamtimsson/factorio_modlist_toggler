@@ -1,6 +1,7 @@
 import tkinter as tk
 import json
 import os
+import shutil
 
 class ModToggleApp:
     def __init__(self, root):
@@ -97,11 +98,6 @@ class ModToggleApp:
         self.show_confirm("toggle", self.toggle_enabled_mods)
     def confirm_backup(self):
         self.show_confirm("backup", self.backup_mod_list)
-
-    def confirm_delete(self):
-        self.show_confirm("delete", self.delete_backup)
-    def confirm_restore(self):
-        self.show_confirm("restore", self.restore_mod_list)
     def confirm_restore(self):
         self.show_confirm("restore", self.restore_mod_list)
     def confirm_delete(self):
