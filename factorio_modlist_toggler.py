@@ -1,108 +1,183 @@
+import tkinter as tk
 import json
 import os
-import shutil
-import tkinter as tk
 
 class ModToggleApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Factorio Mod Toggler")
-
         self.confirm_dict = {
-            "backup": False,
-            "restore": False,
-            "toggle": False,
-            "delete": False
+            "confirm_backup": False,
+            "confirm_restore": False,
+            "confirm_toggle": False,
+            "confirm_delete": False
         }
-        
-        self.mods_to_toggle = [
-            "factoriohd_base",
-            "factoriohd_logistics",
-            "factoriohd_military",
-            "factoriohd_modpack",
-            "factoriohd_production",
-            "factoriohd_terrain",
-            "alien-biomes",
-            "alien-biomes-hr-terrain"
-        ]
-        
+        self.mods_info = {}
         self.create_ui()
+        self.load_mods()
 
     def create_ui(self):
-        self.czech_button = tk.Button(self.root, text="Czech", command=self.check_mods)
-        self.backup_button = tk.Button(self.root, text="Backup", command=self.confirm_backup)
-        self.restore_button = tk.Button(self.root, text="Restore", command=self.confirm_restore)
-        self.toggle_button = tk.Button(self.root, text="Toggle", command=self.confirm_toggle)
-        self.delete_backup_button = tk.Button(self.root, text="Delete", command=self.confirm_delete)
-        self.alert_button = tk.Button(self.root, text="Alert", command=self.show_alert)
-        self.exit_button = tk.Button(self.root, text="Exit", command=self.root.quit)
+        self.button_frame = tk.Frame(self.root)
+        self.button_frame.grid(row=0, column=0, padx=0, pady=0, sticky="nsew")
+        self.button_frame.config(borderwidth=2, relief="solid")
 
-        self.czech_button.pack()
-        self.backup_button.pack()
-        self.restore_button.pack()
-        self.toggle_button.pack()
-        self.delete_backup_button.pack()
-        self.alert_button.pack()
-        self.exit_button.pack()
-        
+        button_width = 10
+
+        buttons = [
+            ("Toggle", self.confirm_toggle),
+            ("Backup", self.confirm_backup),
+            ("Restore", self.confirm_restore),
+            ("Delete", self.confirm_delete),
+            ("Alert", self.show_alert),
+            ("Czech Mods", self.czech_mods),
+            ("Exit", self.root.quit)
+        ]
+
+        for i, (text, command) in enumerate(buttons):
+            button_name = f"{text.lower()}_button"
+            setattr(self, button_name, tk.Button(self.button_frame, text=text, command=command, width=button_width))
+            button = getattr(self, button_name)
+            button.grid(row=i, column=0, sticky="ew")
+
         self.root.bind("<Escape>", self.revert_confirm)
 
-    def confirm_backup(self):
-        self.show_confirm("backup", self.backup_mod_list)
+        self.mod_list_frame = tk.Frame(self.root)
+        self.mod_list_frame.grid(row=0, column=1, padx=0, pady=0, sticky="nsew")
+        self.mod_list_frame.config(borderwidth=2, relief="solid")
 
-    def confirm_restore(self):
-        self.show_confirm("restore", self.restore_mod_list)
+        self.mod_listbox = tk.Listbox(self.mod_list_frame, selectmode=tk.MULTIPLE)
+        self.mod_listbox.pack(fill=tk.BOTH, expand=True)
+        self.mod_listbox.bind("<Double-Button-1>", self.on_mod_listbox_doubleclick)
 
-    def confirm_toggle(self):
-        self.show_confirm("toggle", self.toggle_mods)
+        self.root.grid_rowconfigure(0, weight=1)
+        self.root.grid_columnconfigure(1, weight=1)
 
-    def confirm_delete(self):
-        self.show_confirm("delete", self.delete_backup)
+    def load_mods(self):
+        self.mods_info = {}
 
-    def show_confirm(self, action, function):
-        if not self.confirm_dict[action]:
-            print(action.capitalize() + " Press [ESC] to cancel.")
-            self.confirm_dict[action] = True
-            self.update_buttons()
-        else:
-            self.confirm_dict[action] = False
-            self.update_buttons()
-            function()
-
-    def revert_confirm(self, event):
-        for action in self.confirm_dict:
-            self.confirm_dict[action] = False
-        self.update_buttons()
-
-    def update_buttons(self):
-        for action, button in zip(self.confirm_dict.keys(), [self.backup_button, self.restore_button, self.toggle_button, self.delete_backup_button]):
-            button.config(text=action.capitalize() if not self.confirm_dict[action] else "[ESC] to Cancel")
-
-    def get_mods_directory(self):
-        user_home = os.path.expanduser("~")
-        if os.name == "nt":  # Windows
-            return os.path.join(user_home, "AppData", "Roaming", "Factorio", "mods")
-        else:  # Unix-like (Linux, macOS)
-            return os.path.join(user_home, ".factorio", "mods")
-            
-    def check_mods(self):
         mods_directory = self.get_mods_directory()
         mod_list_path = os.path.join(mods_directory, "mod-list.json")
 
         with open(mod_list_path, "r") as file:
             data = json.load(file)
 
-        checked_mods = []
-
         for mod in data["mods"]:
             mod_name = mod["name"]
-            if mod_name in self.mods_to_toggle:
+            if mod_name != "base":
+                self.mods_info[mod_name] = {"selected": False, "enabled": False, "favorite": mod.get("favorite", False)}
+
+        self.populate_mod_listbox()
+
+    def populate_mod_listbox(self):
+        self.mod_listbox.delete(0, tk.END)
+
+        for mod_name, info in self.mods_info.items():
+            selected = info["selected"]
+            enabled = info["enabled"]
+            favorite = info["favorite"]
+            mod_info = f"[{'*' if favorite else ' '}] [{'x' if enabled else ' '}] {mod_name}"
+
+            self.mod_listbox.insert(tk.END, mod_info)
+
+    def on_mod_listbox_doubleclick(self, event):
+        selected_indices = self.mod_listbox.curselection()
+        for index in selected_indices:
+            self.toggle_enabled(index)
+
+    def toggle_enabled(self, index):
+        mod_name = list(self.mods_info.keys())[index]
+        self.mods_info[mod_name]["enabled"] = not self.mods_info[mod_name]["enabled"]
+        self.populate_mod_listbox()
+
+    def toggle_favorite(self, index):
+        mod_name = self.get_mod_name_from_index(index)
+        self.mods_info[mod_name]["favorite"] = not self.mods_info[mod_name]["favorite"]
+        self.populate_mod_listbox()
+    def confirm_toggle(self):
+        self.show_confirm("toggle", self.toggle_enabled_mods)
+    def confirm_backup(self):
+        self.show_confirm("backup", self.backup_mod_list)
+
+    def confirm_delete(self):
+        self.show_confirm("delete", self.delete_backup)
+    def confirm_restore(self):
+        self.show_confirm("restore", self.restore_mod_list)
+    def confirm_restore(self):
+        self.show_confirm("restore", self.restore_mod_list)
+    def confirm_delete(self):
+        self.show_confirm("delete", self.delete_backup)
+
+    def toggle_enabled_mods(self):
+        for mod_name, info in self.mods_info.items():
+            if info["selected"]:
+                info["enabled"] = not info["enabled"]
+        self.populate_mod_listbox()
+        self.print_enabled_status()
+
+    def print_enabled_status(self):
+        print("Enabled Status:")
+        for mod_name, info in self.mods_info.items():
+            print(f"{mod_name}: {'Enabled' if info['enabled'] else 'Disabled'}")
+
+    def show_confirm(self, action, function):
+        if not self.confirm_dict[action]:
+            button_name = f"{action.split('_')[1]}_button"
+            if action == "confirm_toggle":
+                button_name = "toggle_button"
+            self.confirm_dict[action] = button_name
+            self.update_buttons()
+        else:
+            self.confirm_dict[action] = False
+            self.update_buttons()
+            if self.confirm_dict["confirm_toggle"]:
+                function()
+
+    def revert_confirm(self, event):
+        for action in self.confirm_dict:
+            if self.confirm_dict[action]:
+                button_name = self.confirm_dict[action]
+                button = getattr(self, button_name, None)
+                if button is not None:
+                    button.config(text=action.split('_')[1].capitalize(), width=10)
+                print(f"{button_name} Cancelled")
+            self.confirm_dict[action] = False
+        self.update_buttons()
+
+    def update_buttons(self):
+        button_actions = [
+            ("confirm_backup", self.confirm_backup),
+            ("confirm_restore", self.confirm_restore),
+            ("confirm_toggle", self.confirm_toggle),
+            ("confirm_delete", self.confirm_delete)
+        ]
+
+        for action, button_func in button_actions:
+            button_name = f"{action.split('_')[1]}_button"
+            if action == "confirm_toggle":
+                button_name = "toggle_button"
+            button = getattr(self, button_name, None)
+            if button is not None:
+                if self.confirm_dict[action]:
+                    button.config(text="[ESC]", width=5)
+                else:
+                    button.config(text=action.split('_')[1].capitalize(), width=10)
+                    button.config(state=tk.NORMAL)
+
+    def czech_mods(self):
+        mods_directory = self.get_mods_directory()
+        mod_list_path = os.path.join(mods_directory, "mod-list.json")
+
+        with open(mod_list_path, "r") as file:
+            data = json.load(file)
+
+        mods_data = data["mods"]
+
+        for mod in mods_data:
+            mod_name = mod["name"]
+            if mod_name != "base":
                 mod_enabled = mod["enabled"]
-                checked_mods.append(f"{mod_name} is {'Enabled' if mod_enabled else 'Disabled'}")
-
-        checked_mods_text = "\n".join(checked_mods)
-        print("Mods status:\n", checked_mods_text)
-
+                toggle_status = "enabled" if mod_enabled else "disabled"
+                print(f"{mod_name} is {toggle_status}")
     def backup_mod_list(self):
         mods_directory = self.get_mods_directory()
         backup_path = os.path.join(mods_directory, "mod-list_backup.json")
@@ -121,33 +196,6 @@ class ModToggleApp:
             print("Mod list restored successfully!")
         else:
             print("Backup file not found. Cannot restore mod list.")
-            
-    def toggle_mods(self):
-        mods_directory = self.get_mods_directory()
-        mod_list_path = os.path.join(mods_directory, "mod-list.json")
-    
-        with open(mod_list_path, "r") as file:
-            data = json.load(file)
-    
-        toggled_mods = []
-    
-        for mod in data["mods"]:
-            if mod["name"] in self.mods_to_toggle:
-                if mod["enabled"]:
-                    mod["enabled"] = False
-                    toggled_mods.append(f"Disabled: {mod['name']}")
-                else:
-                    mod["enabled"] = True
-                    toggled_mods.append(f"Enabled: {mod['name']}")
-    
-        with open(mod_list_path, "w") as file:
-            json.dump(data, file, indent=4)
-    
-        if toggled_mods:
-            toggled_mods_text = "\n".join(toggled_mods)
-            print("Changed mods:\n", toggled_mods_text)
-        else:
-            print("No mods changed.")
 
     def delete_backup(self):
         mods_directory = self.get_mods_directory()
@@ -159,9 +207,17 @@ class ModToggleApp:
         else:
             print("No backup file found.")
 
+
     def show_alert(self):
         print(":)")
 
+    def get_mods_directory(self):
+        user_home = os.path.expanduser("~")
+        if os.name == "nt":
+            return os.path.join(user_home, "AppData", "Roaming", "Factorio", "mods")
+        else:
+            return os.path.join(user_home, ".factorio", "mods")
+            
 if __name__ == "__main__":
     root = tk.Tk()
     app = ModToggleApp(root)
